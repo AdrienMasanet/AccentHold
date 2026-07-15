@@ -13,7 +13,6 @@
     <RootNamespace>AccentHold</RootNamespace>
     <Version>1.0.0</Version>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
     <Authors>Adrien Masanet</Authors>
     <Description>macOS-style press-and-hold accent picker for Windows</Description>
