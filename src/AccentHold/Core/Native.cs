@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 
 namespace AccentHold.Core;
 
-// All Win32/DWM/DPI interop used by the app, grouped in one place.
+// All Win32/DPI interop used by the app, grouped in one place.
 internal static class Native
 {
     // --- Low-level keyboard/mouse hooks ---
@@ -221,24 +221,6 @@ internal static class Native
 
     [DllImport("user32.dll")]
     public static extern bool SetWindowPos(nint hWnd, nint hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
-
-    // --- DWM: acrylic backdrop, dark mode, rounded corners ---
-    public const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
-    public const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
-    public const int DWMWA_SYSTEMBACKDROP_TYPE = 38;
-    public const int DWMWCP_ROUND = 2;
-    public const int DWMSBT_TRANSIENTWINDOW = 3;
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct MARGINS { public int Left; public int Right; public int Top; public int Bottom; }
-
-    [DllImport("dwmapi.dll")]
-    public static extern int DwmSetWindowAttribute(nint hwnd, int attr, ref int attrValue, int attrSize);
-
-    [DllImport("dwmapi.dll")]
-    public static extern int DwmExtendFrameIntoClientArea(nint hwnd, ref MARGINS pMarInset);
-
-    public static bool IsKeyDownAsync(int vk) => (GetKeyState(vk) & 0x8000) != 0;
 
     public static bool IsCapsLockOn() => (GetKeyState(VK_CAPITAL) & 1) != 0;
 

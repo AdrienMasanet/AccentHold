@@ -4,9 +4,7 @@ using Accessibility;
 
 namespace AccentHold.Core;
 
-// Locates the text caret in the foreground app (screen pixels).
-// Strategy: Win32 caret -> MSAA caret -> UIA text selection -> focused text control bounds.
-// Returning false means "no active text input", in which case no popup is shown.
+// Finds the foreground app's caret in screen pixels (Win32 -> MSAA -> UIA); false means no text input, so no popup.
 internal static class CaretLocator
 {
     private static Guid _iidIAccessible = new("618736E0-3C3D-11CF-810C-00AA00389B71");

@@ -3,8 +3,7 @@ using AccentHold.UI;
 
 namespace AccentHold.Core;
 
-// State machine driving the press-and-hold flow, fed by the low-level hooks.
-// Hook callbacks stay cheap; caret lookup runs on a worker, UI work on the dispatcher.
+// Press-and-hold state machine; hook callbacks stay cheap, caret lookup runs on a worker, UI on the dispatcher.
 internal sealed class HoldController : IDisposable
 {
     private enum State { Idle, Priming, Pending, Suppressed, Popup }
@@ -12,26 +11,34 @@ internal sealed class HoldController : IDisposable
     private readonly object _gate = new();
     private readonly Dispatcher _dispatcher;
     private readonly Func<AccentPopup> _popup;
+    private readonly Settings _settings;
     private readonly KeyboardHook _keyboard = new();
     private readonly MouseHook _mouse = new();
     private readonly Native.WinEventProc _winEventProc;
+    private readonly System.Threading.Timer _holdTimer;
     private nint _winEventHook;
 
+    private AccentTable _table;
     private State _state = State.Idle;
     private int _primeVk;
+    private bool _primeUpper;
     private string[] _variants = [];
     private int _selection = -1;
-    private int _lookupToken;
+    private int _holdToken;
     private readonly HashSet<int> _downKeys = [];
     private readonly HashSet<int> _swallowedDowns = [];
 
     public bool Enabled { get; set; } = true;
 
-    public HoldController(Dispatcher dispatcher, Func<AccentPopup> popup)
+    public HoldController(Dispatcher dispatcher, Func<AccentPopup> popup, Settings settings)
     {
         _dispatcher = dispatcher;
         _popup = popup;
+        _settings = settings;
+        _table = new AccentTable(settings.AccentOverrides);
         _winEventProc = OnForegroundChanged;
+        _holdTimer = new System.Threading.Timer(OnHoldElapsed);
+        settings.Changed += () => { lock (_gate) _table = new AccentTable(_settings.AccentOverrides); };
     }
 
     public void Install()
@@ -54,74 +61,54 @@ internal sealed class HoldController : IDisposable
 
             return _state switch
             {
-                State.Idle => HandleIdle(vk, isDown, wasDown),
-                State.Priming => HandlePriming(vk, isDown, wasDown),
-                State.Pending => HandlePending(vk, isDown, wasDown),
-                State.Suppressed => HandleSuppressed(vk, isDown, wasDown),
+                State.Idle => HandleIdle(vk, isDown),
+                State.Priming => HandlePriming(vk, isDown),
+                State.Pending => HandlePending(vk, isDown),
+                State.Suppressed => HandleSuppressed(vk, isDown),
                 State.Popup => HandlePopup(vk, isDown, wasDown),
                 _ => false,
             };
         }
     }
 
-    private bool HandleIdle(int vk, bool isDown, bool wasDown)
+    // Idle: the first press of an accentable key types normally and arms the hold timer.
+    private bool HandleIdle(int vk, bool isDown)
     {
-        if (isDown && !wasDown && TryGetCandidate(vk, out _, out _))
+        if (isDown && TryGetCandidate(vk, out var ch, out var upper) && _table.TryGetVariants(ch, upper, out var variants))
         {
             _primeVk = vk;
+            _primeUpper = upper;
+            _variants = variants;
+            _selection = -1;
             _state = State.Priming;
+            _holdToken++;
+            _holdTimer.Change(_settings.HoldDelayMs, System.Threading.Timeout.Infinite);
         }
         return false;
     }
 
-    private bool HandlePriming(int vk, bool isDown, bool wasDown)
+    // Priming: swallow the held key's auto-repeats until the timer fires or the key is released.
+    private bool HandlePriming(int vk, bool isDown)
     {
-        if (isDown && vk == _primeVk && wasDown)
-        {
-            // First auto-repeat of the held key: swallow it and try to open the popup.
-            if (TryGetCandidate(vk, out var ch, out var upper) && AccentMap.TryGetVariants(ch, upper, out var variants))
-            {
-                _variants = variants;
-                _selection = -1;
-                _state = State.Pending;
-                StartCaretLookup();
-                return true;
-            }
-            _state = State.Idle;
-            return false;
-        }
-        if (isDown)
-        {
-            _state = State.Idle;
-            return HandleIdle(vk, isDown, wasDown);
-        }
-        if (vk == _primeVk) _state = State.Idle;
-        return false;
-    }
-
-    private bool HandlePending(int vk, bool isDown, bool wasDown)
-    {
-        // Lookup in flight: keep swallowing repeats of the held key.
         if (isDown && vk == _primeVk) return true;
-        if (isDown)
-        {
-            _lookupToken++;
-            _state = State.Idle;
-            return HandleIdle(vk, isDown, wasDown);
-        }
-        // Key releases pass through; the popup may still appear (macOS keeps it open).
+        if (isDown) { CancelHold(); return HandleIdle(vk, isDown); }
+        if (vk == _primeVk) CancelHold();
         return false;
     }
 
-    private bool HandleSuppressed(int vk, bool isDown, bool wasDown)
+    // Pending: caret lookup in flight; keep swallowing repeats, let other keys cancel.
+    private bool HandlePending(int vk, bool isDown)
     {
-        // No text caret was found: let the key repeat normally until it is released.
+        if (isDown && vk == _primeVk) return true;
+        if (isDown) { _holdToken++; _state = State.Idle; return HandleIdle(vk, isDown); }
+        return false;
+    }
+
+    // Suppressed: no caret was found; let the key repeat normally until released.
+    private bool HandleSuppressed(int vk, bool isDown)
+    {
         if (!isDown && vk == _primeVk) _state = State.Idle;
-        else if (isDown && vk != _primeVk)
-        {
-            _state = State.Idle;
-            return HandleIdle(vk, isDown, wasDown);
-        }
+        else if (isDown && vk != _primeVk) { _state = State.Idle; return HandleIdle(vk, isDown); }
         return false;
     }
 
@@ -161,30 +148,44 @@ internal sealed class HoldController : IDisposable
 
         // Any other key closes the popup and types normally (macOS behaviour).
         Dismiss();
-        return HandleIdle(vk, isDown, wasDown);
+        return HandleIdle(vk, isDown);
     }
 
-    private void StartCaretLookup()
+    private void CancelHold()
     {
-        var token = ++_lookupToken;
-        var variants = _variants;
-        Task.Run(() =>
+        _holdToken++;
+        _holdTimer.Change(System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
+        _state = State.Idle;
+    }
+
+    // Timer thread: hold delay reached, look up the caret and decide whether to open the popup.
+    private void OnHoldElapsed(object? _)
+    {
+        int token;
+        string[] variants;
+        double scale;
+        lock (_gate)
         {
-            var found = CaretLocator.TryLocate(out var rect, out var approximate);
-            lock (_gate)
+            if (_state != State.Priming || !_downKeys.Contains(_primeVk)) return;
+            _state = State.Pending;
+            token = _holdToken;
+            variants = _variants;
+            scale = _settings.Scale;
+        }
+
+        var found = CaretLocator.TryLocate(out var rect, out var approximate);
+        lock (_gate)
+        {
+            if (_state != State.Pending || token != _holdToken) return;
+            if (!found)
             {
-                if (_state != State.Pending || token != _lookupToken) return;
-                if (!found)
-                {
-                    // No text input in focus: stand down until the key is released.
-                    _state = _downKeys.Contains(_primeVk) ? State.Suppressed : State.Idle;
-                    return;
-                }
-                _state = State.Popup;
-                _swallowedDowns.Clear();
-                _dispatcher.BeginInvoke(() => _popup().ShowAt(rect, approximate, variants, OnOptionClicked));
+                _state = _downKeys.Contains(_primeVk) ? State.Suppressed : State.Idle;
+                return;
             }
-        });
+            _state = State.Popup;
+            _swallowedDowns.Clear();
+            _dispatcher.BeginInvoke(() => _popup().ShowAt(rect, approximate, variants, scale, OnOptionClicked));
+        }
     }
 
     private void MoveSelection(int delta)
@@ -229,8 +230,7 @@ internal sealed class HoldController : IDisposable
             switch (_state)
             {
                 case State.Priming or State.Pending:
-                    _lookupToken++;
-                    _state = State.Idle;
+                    CancelHold();
                     break;
                 case State.Popup:
                     var hit = Native.WindowFromPoint(new Native.POINT { X = x, Y = y });
@@ -245,11 +245,7 @@ internal sealed class HoldController : IDisposable
         lock (_gate)
         {
             if (_state == State.Popup) Dismiss();
-            else if (_state != State.Idle)
-            {
-                _lookupToken++;
-                _state = State.Idle;
-            }
+            else if (_state != State.Idle) CancelHold();
         }
     }
 
@@ -264,12 +260,16 @@ internal sealed class HoldController : IDisposable
         // High bit set means dead key; zero means the key produces no character.
         if (mapped == 0 || (mapped & 0x80000000) != 0) return false;
         ch = char.ToLowerInvariant((char)mapped);
-        if (!AccentMap.Contains(ch)) return false;
+        if (!_table.Contains(ch)) return false;
         upper = AnyDown(Native.VK_SHIFT, Native.VK_LSHIFT, Native.VK_RSHIFT) ^ Native.IsCapsLockOn();
         return true;
     }
 
-    private bool AnyDown(params int[] vks) => vks.Any(_downKeys.Contains);
+    private bool AnyDown(params ReadOnlySpan<int> vks)
+    {
+        foreach (var vk in vks) if (_downKeys.Contains(vk)) return true;
+        return false;
+    }
 
     private static int DigitOf(int vk) => vk switch
     {
@@ -287,6 +287,7 @@ internal sealed class HoldController : IDisposable
     {
         _keyboard.Dispose();
         _mouse.Dispose();
+        _holdTimer.Dispose();
         if (_winEventHook != 0)
         {
             Native.UnhookWinEvent(_winEventHook);

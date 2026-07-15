@@ -12,26 +12,30 @@ internal sealed class TrayIcon : IDisposable
 {
     private readonly NotifyIcon _icon;
 
-    public TrayIcon(HoldController controller, Action quit)
+    public TrayIcon(HoldController controller, Settings settings, Action quit)
     {
-        var enabled = new ToolStripMenuItem("Activé") { Checked = true, CheckOnClick = true };
+        var enabled = new ToolStripMenuItem("Enabled") { Checked = true, CheckOnClick = true };
         enabled.CheckedChanged += (_, _) => controller.Enabled = enabled.Checked;
 
-        var startup = new ToolStripMenuItem("Démarrer avec Windows") { Checked = StartupManager.IsEnabled(), CheckOnClick = true };
+        var startup = new ToolStripMenuItem("Start with Windows") { Checked = StartupManager.IsEnabled(), CheckOnClick = true };
         startup.CheckedChanged += (_, _) => StartupManager.SetEnabled(startup.Checked);
 
-        var quitItem = new ToolStripMenuItem("Quitter");
+        var settingsItem = new ToolStripMenuItem("Settings…");
+        settingsItem.Click += (_, _) => settings.OpenInEditor();
+
+        var quitItem = new ToolStripMenuItem("Quit");
         quitItem.Click += (_, _) => quit();
 
         var menu = new ContextMenuStrip();
         menu.Items.Add(enabled);
         menu.Items.Add(startup);
+        menu.Items.Add(settingsItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(quitItem);
 
         _icon = new NotifyIcon
         {
-            Text = "AccentHold — maintenez une lettre pour accentuer",
+            Text = "AccentHold — hold a letter to accent it",
             ContextMenuStrip = menu,
             Icon = DrawIcon(),
             Visible = true,
