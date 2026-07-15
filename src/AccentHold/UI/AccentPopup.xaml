@@ -1,0 +1,59 @@
+<Window x:Class="AccentHold.UI.AccentPopup"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        Topmost="True"
+        SizeToContent="WidthAndHeight"
+        AllowsTransparency="False"
+        Background="Transparent"
+        Focusable="False"
+        FontFamily="Segoe UI"
+        Cursor="Arrow">
+
+    <Window.Resources>
+        <SolidColorBrush x:Key="ForegroundBrush" Color="White" />
+        <SolidColorBrush x:Key="SubtleBrush" Color="#99FFFFFF" />
+        <SolidColorBrush x:Key="HoverBrush" Color="#26FFFFFF" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#0078D4" />
+        <SolidColorBrush x:Key="SelectedForegroundBrush" Color="White" />
+        <SolidColorBrush x:Key="SelectedSubtleBrush" Color="#CCFFFFFF" />
+    </Window.Resources>
+
+    <ItemsControl x:Name="Items" Margin="5,4" IsTabStop="False">
+        <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+                <StackPanel Orientation="Horizontal" />
+            </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+            <DataTemplate>
+                <Border x:Name="Pill" CornerRadius="6" Padding="10,3,10,4" Margin="1,0"
+                        Background="Transparent"
+                        MouseEnter="OnOptionEnter" MouseLeave="OnOptionLeave"
+                        MouseLeftButtonUp="OnOptionClick">
+                    <StackPanel>
+                        <TextBlock x:Name="Glyph" Text="{Binding Char}" FontSize="21"
+                                   HorizontalAlignment="Center"
+                                   Foreground="{DynamicResource ForegroundBrush}" />
+                        <TextBlock x:Name="Hint" Text="{Binding Digit}" FontSize="10.5" Margin="0,1,0,0"
+                                   HorizontalAlignment="Center"
+                                   Foreground="{DynamicResource SubtleBrush}" />
+                    </StackPanel>
+                </Border>
+                <DataTemplate.Triggers>
+                    <DataTrigger Binding="{Binding IsHovered}" Value="True">
+                        <Setter TargetName="Pill" Property="Background" Value="{DynamicResource HoverBrush}" />
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                        <Setter TargetName="Pill" Property="Background" Value="{DynamicResource AccentBrush}" />
+                        <Setter TargetName="Glyph" Property="Foreground" Value="{DynamicResource SelectedForegroundBrush}" />
+                        <Setter TargetName="Hint" Property="Foreground" Value="{DynamicResource SelectedSubtleBrush}" />
+                    </DataTrigger>
+                </DataTemplate.Triggers>
+            </DataTemplate>
+        </ItemsControl.ItemTemplate>
+    </ItemsControl>
+</Window>
