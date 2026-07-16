@@ -201,13 +201,11 @@ internal sealed class HoldController : IDisposable
 
     private void Commit(int index)
     {
-        var text = _variants[index];
+        // Inject synchronously so the replacement lands before any keystroke the user
+        // types right after; deferring it could make the backspace eat the wrong char.
+        TextInjector.ReplaceLastChar(_variants[index]);
         _state = State.Idle;
-        _dispatcher.BeginInvoke(() =>
-        {
-            _popup().HideNow();
-            TextInjector.ReplaceLastChar(text);
-        });
+        _dispatcher.BeginInvoke(() => _popup().HideNow());
     }
 
     private void Dismiss()
