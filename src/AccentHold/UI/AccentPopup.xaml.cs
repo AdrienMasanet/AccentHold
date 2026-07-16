@@ -11,6 +11,8 @@ using Microsoft.Win32;
 namespace AccentHold.UI;
 
 // Accent chooser popup: translucent Win11-style flyout, never takes focus, positioned near the caret.
+// The window is created once and stays shown forever; "hidden" means opacity 0 + click-through.
+// Hiding/showing the HWND would let the OS flash the last rendered frame at the old position.
 public partial class AccentPopup : Window
 {
     // Read by the low-level mouse hook thread to detect clicks outside the popup.
@@ -28,6 +30,7 @@ public partial class AccentPopup : Window
         InitializeComponent();
         Items.ItemsSource = _options;
         new WindowInteropHelper(this).EnsureHandle();
+        Show();
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -36,9 +39,10 @@ public partial class AccentPopup : Window
         _hwnd = new WindowInteropHelper(this).Handle;
         InstanceHwnd = _hwnd;
 
-        // Never steal focus from the app being typed in, and stay out of Alt+Tab.
+        // Never steal focus, stay out of Alt+Tab, and start click-through while invisible.
         var ex = Native.GetWindowLongPtrW(_hwnd, Native.GWL_EXSTYLE);
-        Native.SetWindowLongPtrW(_hwnd, Native.GWL_EXSTYLE, ex | Native.WS_EX_NOACTIVATE | Native.WS_EX_TOOLWINDOW);
+        Native.SetWindowLongPtrW(_hwnd, Native.GWL_EXSTYLE,
+            ex | Native.WS_EX_NOACTIVATE | Native.WS_EX_TOOLWINDOW | Native.WS_EX_TRANSPARENT);
     }
 
     internal void ShowAt(Native.RECT caretPx, bool approximate, IReadOnlyList<string> variants, double scale, Action<int> onClick)
@@ -50,14 +54,15 @@ public partial class AccentPopup : Window
         _options.Clear();
         for (var i = 0; i < variants.Count; i++) _options.Add(new OptionVm(variants[i], i));
 
+        // Lay out and move while fully transparent, so the first visible frame is final.
         BeginAnimation(OpacityProperty, null);
         Opacity = 0;
-        if (!IsVisible) Show();
         // Two passes: moving onto a different-DPI monitor can re-scale the content.
         UpdateLayout();
         Position(caretPx, approximate);
         UpdateLayout();
         Position(caretPx, approximate);
+        SetClickThrough(false);
         FadeIn();
     }
 
@@ -68,9 +73,16 @@ public partial class AccentPopup : Window
 
     public void HideNow()
     {
-        if (!IsVisible) return;
         BeginAnimation(OpacityProperty, null);
-        Hide();
+        Opacity = 0;
+        SetClickThrough(true);
+    }
+
+    private void SetClickThrough(bool enabled)
+    {
+        var ex = Native.GetWindowLongPtrW(_hwnd, Native.GWL_EXSTYLE);
+        var wanted = enabled ? ex | Native.WS_EX_TRANSPARENT : ex & ~(nint)Native.WS_EX_TRANSPARENT;
+        if (wanted != ex) Native.SetWindowLongPtrW(_hwnd, Native.GWL_EXSTYLE, wanted);
     }
 
     private void Position(Native.RECT caret, bool approximate)
@@ -99,7 +111,7 @@ public partial class AccentPopup : Window
         visY = Math.Clamp(visY, wa.Top + gap, Math.Max(wa.Top + gap, wa.Bottom - visH - gap));
 
         Native.SetWindowPos(_hwnd, Native.HWND_TOPMOST, visX - m, visY - m, 0, 0,
-            Native.SWP_NOSIZE | Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW);
+            Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
     }
 
     private void FadeIn()

@@ -19,6 +19,15 @@ public partial class App : Application
         DispatcherUnhandledException += (_, ex) => LogFatal(ex.Exception);
         AppDomain.CurrentDomain.UnhandledException += (_, ex) => LogFatal(ex.ExceptionObject as Exception);
 
+        _settings = new Settings();
+
+        // Demo mode installs no hooks and exits on its own; it may run beside the real instance.
+        if (e.Args.Contains("--demo"))
+        {
+            RunDemo();
+            return;
+        }
+
         _mutex = new Mutex(true, @"Local\AccentHold.SingleInstance", out var isFirst);
         if (!isFirst)
         {
@@ -26,42 +35,37 @@ public partial class App : Application
             return;
         }
 
-        _settings = new Settings();
         _controller = new HoldController(Dispatcher, PopupFactory, _settings);
-
-        if (e.Args.Contains("--demo"))
-        {
-            RunDemo();
-            return;
-        }
-
         _controller.Install();
         _tray = new TrayIcon(_controller, _settings, Shutdown);
     }
 
     private AccentPopup PopupFactory() => _popup ??= new AccentPopup();
 
-    // Visual smoke test: cycles the popup at a fixed on-screen point to exercise the reshow path.
+    // Visual smoke test: cycles the popup between two screen spots, with a hide in between,
+    // to exercise the exact hide/reposition/reshow path used while typing.
     private void RunDemo()
     {
         var table = new AccentTable();
         var letters = new[] { 'e', 'a', 'o', 'u', 'c' };
         var screen = System.Windows.Forms.Screen.PrimaryScreen!.Bounds;
-        var caret = new Native.RECT
-        {
-            Left = screen.Width / 2,
-            Top = screen.Height / 2,
-            Right = screen.Width / 2 + 2,
-            Bottom = screen.Height / 2 + 24,
-        };
         var i = 0;
-        var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
+        var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(750) };
         timer.Tick += (_, _) =>
         {
-            if (i >= letters.Length) { Shutdown(); return; }
-            table.TryGetVariants(letters[i], upper: false, out var variants);
-            PopupFactory().ShowAt(caret, approximate: false, variants, _settings!.Scale, _ => { });
-            PopupFactory().SetSelection(1);
+            if (i >= letters.Length * 2) { Shutdown(); return; }
+            if (i % 2 == 1)
+            {
+                PopupFactory().HideNow();
+            }
+            else
+            {
+                table.TryGetVariants(letters[i / 2], upper: false, out var variants);
+                var x = screen.Width / 2 + (i % 4 == 0 ? -280 : 280);
+                var caret = new Native.RECT { Left = x, Top = screen.Height / 2, Right = x + 2, Bottom = screen.Height / 2 + 24 };
+                PopupFactory().ShowAt(caret, approximate: false, variants, _settings!.Scale, _ => { });
+                PopupFactory().SetSelection(1);
+            }
             i++;
         };
         timer.Start();

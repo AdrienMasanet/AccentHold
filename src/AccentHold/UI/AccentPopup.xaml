@@ -9,6 +9,7 @@
         SizeToContent="WidthAndHeight"
         AllowsTransparency="True"
         Background="Transparent"
+        Opacity="0"
         Focusable="False"
         FontFamily="Segoe UI"
         Cursor="Arrow">

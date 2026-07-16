@@ -154,6 +154,9 @@ internal static class Native
     public static extern uint GetWindowThreadProcessId(nint hWnd, nint lpdwProcessId);
 
     [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(nint hWnd, out uint lpdwProcessId);
+
+    [DllImport("user32.dll")]
     public static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO lpgui);
 
     [DllImport("user32.dll")]
@@ -206,6 +209,7 @@ internal static class Native
     // --- Window placement / styles for the popup ---
     public const int GWL_EXSTYLE = -20;
     public const int WS_EX_TOOLWINDOW = 0x0080;
+    public const int WS_EX_TRANSPARENT = 0x0020;
     public const int WS_EX_NOACTIVATE = 0x08000000;
     public const int WS_EX_TOPMOST = 0x0008;
     public static readonly nint HWND_TOPMOST = -1;
