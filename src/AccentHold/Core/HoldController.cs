@@ -174,6 +174,7 @@ internal sealed class HoldController : IDisposable
         }
 
         var found = CaretLocator.TryLocate(out var rect, out var approximate);
+        Native.RECT? avoid = CaretLocator.TryGetShellOverlayRect(out var overlayRect) ? overlayRect : null;
         lock (_gate)
         {
             if (_state != State.Pending || token != _holdToken) return;
@@ -184,7 +185,7 @@ internal sealed class HoldController : IDisposable
             }
             _state = State.Popup;
             _swallowedDowns.Clear();
-            _dispatcher.BeginInvoke(() => _popup().ShowAt(rect, approximate, variants, scale, OnOptionClicked));
+            _dispatcher.BeginInvoke(() => _popup().ShowAt(rect, approximate, variants, scale, avoid, OnOptionClicked));
         }
     }
 

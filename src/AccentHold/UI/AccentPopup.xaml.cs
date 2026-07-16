@@ -45,7 +45,8 @@ public partial class AccentPopup : Window
             ex | Native.WS_EX_NOACTIVATE | Native.WS_EX_TOOLWINDOW | Native.WS_EX_TRANSPARENT);
     }
 
-    internal void ShowAt(Native.RECT caretPx, bool approximate, IReadOnlyList<string> variants, double scale, Action<int> onClick)
+    internal void ShowAt(Native.RECT caretPx, bool approximate, IReadOnlyList<string> variants, double scale,
+        Native.RECT? avoid, Action<int> onClick)
     {
         _onClick = onClick;
         ApplyTheme();
@@ -59,9 +60,9 @@ public partial class AccentPopup : Window
         Opacity = 0;
         // Two passes: moving onto a different-DPI monitor can re-scale the content.
         UpdateLayout();
-        Position(caretPx, approximate);
+        Position(caretPx, approximate, avoid);
         UpdateLayout();
-        Position(caretPx, approximate);
+        Position(caretPx, approximate, avoid);
         SetClickThrough(false);
         FadeIn();
     }
@@ -85,7 +86,7 @@ public partial class AccentPopup : Window
         if (wanted != ex) Native.SetWindowLongPtrW(_hwnd, Native.GWL_EXSTYLE, wanted);
     }
 
-    private void Position(Native.RECT caret, bool approximate)
+    private void Position(Native.RECT caret, bool approximate, Native.RECT? avoid)
     {
         var center = new Native.POINT { X = (caret.Left + caret.Right) / 2, Y = (caret.Top + caret.Bottom) / 2 };
         var monitor = Native.MonitorFromPoint(center, Native.MONITOR_DEFAULTTONEAREST);
@@ -109,6 +110,16 @@ public partial class AccentPopup : Window
         if (visY < wa.Top + gap) visY = caret.Bottom + gap;
         visX = Math.Clamp(visX, wa.Left + gap, Math.Max(wa.Left + gap, wa.Right - visW - gap));
         visY = Math.Clamp(visY, wa.Top + gap, Math.Max(wa.Top + gap, wa.Bottom - visH - gap));
+
+        // Shell overlays (Start menu, Search) sit in a window band no app can draw over,
+        // so slide out of their window rect; if the overlay fills the screen, stay put.
+        if (avoid is { } a && visX < a.Right && visX + visW > a.Left && visY < a.Bottom && visY + visH > a.Top)
+        {
+            var above = a.Top - gap - visH;
+            var below = a.Bottom + gap;
+            if (above >= wa.Top + gap) visY = above;
+            else if (below + visH <= wa.Bottom - gap) visY = below;
+        }
 
         Native.SetWindowPos(_hwnd, Native.HWND_TOPMOST, visX - m, visY - m, 0, 0,
             Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);

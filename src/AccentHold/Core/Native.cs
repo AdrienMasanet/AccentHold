@@ -165,6 +165,9 @@ internal static class Native
     [DllImport("user32.dll")]
     public static extern nint WindowFromPoint(POINT point);
 
+    [DllImport("user32.dll")]
+    public static extern bool GetWindowRect(nint hWnd, out RECT lpRect);
+
     public const uint OBJID_CARET = 0xFFFFFFF8;
 
     [DllImport("oleacc.dll")]

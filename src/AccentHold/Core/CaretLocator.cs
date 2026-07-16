@@ -9,6 +9,29 @@ internal static class CaretLocator
 {
     private static Guid _iidIAccessible = new("618736E0-3C3D-11CF-810C-00AA00389B71");
 
+    // Shell experiences (Start menu, Search) render in a window band above anything an
+    // application can reach, so a popup overlapping them would be invisible. Their window
+    // rect is reported so the popup can be placed just outside it and stay visible.
+    private static readonly HashSet<string> ShellOverlayProcesses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "SearchHost", "SearchApp", "SearchUI", "StartMenuExperienceHost", "ShellExperienceHost", "LockApp",
+    };
+
+    public static bool TryGetShellOverlayRect(out Native.RECT rect)
+    {
+        rect = default;
+        try
+        {
+            var fg = Native.GetForegroundWindow();
+            if (fg == 0) return false;
+            Native.GetWindowThreadProcessId(fg, out uint pid);
+            if (pid == 0) return false;
+            using var p = System.Diagnostics.Process.GetProcessById((int)pid);
+            return ShellOverlayProcesses.Contains(p.ProcessName) && Native.GetWindowRect(fg, out rect);
+        }
+        catch { return false; }
+    }
+
     public static bool TryLocate(out Native.RECT rectPx, out bool approximate)
     {
         rectPx = default;
