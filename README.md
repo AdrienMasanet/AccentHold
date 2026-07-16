@@ -63,6 +63,13 @@ in this repository, MIT-licensed, so you can read exactly what it does. The
 optional administrator mode exists only so the accent menu can reach apps that
 run elevated; it grants AccentHold no other special behavior.
 
+## Limitations
+
+- Apps running as administrator only receive accents if AccentHold was installed with the
+  **administrator privileges** option enabled.
+- Windows keeps its own shell surfaces (Start menu, Search) above every application
+  window, so over those the menu appears just outside the panel instead of at the caret.
+
 ## Build from source
 
 Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
