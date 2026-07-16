@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 
 namespace AccentHold.Core;
 
@@ -12,8 +13,8 @@ internal sealed class Settings : IDisposable
     public int HoldDelayMs { get; private set; } = 180;
     // Menu size multiplier (1.0 = default).
     public double Scale { get; private set; } = 1.0;
-    // Per-letter accent overrides parsed from the [accents] section.
-    public IReadOnlyDictionary<char, string[]> AccentOverrides { get; private set; } = new Dictionary<char, string[]>();
+    // Full accent table parsed from the [accents] section (defaults if the section is empty).
+    public IReadOnlyDictionary<char, string[]> Accents { get; private set; } = AccentTable.Defaults;
 
     public event Action? Changed;
 
@@ -23,7 +24,7 @@ internal sealed class Settings : IDisposable
     public Settings()
     {
         Directory.CreateDirectory(Dir);
-        if (!File.Exists(Path)) File.WriteAllText(Path, DefaultIni);
+        if (!File.Exists(Path)) File.WriteAllText(Path, BuildDefaultIni());
         Load();
 
         _watcher = new FileSystemWatcher(Dir, "config.ini")
@@ -49,14 +50,20 @@ internal sealed class Settings : IDisposable
         HoldDelayMs = Math.Clamp(ini.GetInt("general", "hold_delay_ms", 180), 50, 2000);
         Scale = Math.Clamp(ini.GetDouble("general", "scale", 1.0), 0.7, 2.5);
 
-        var overrides = new Dictionary<char, string[]>();
+        var accents = new Dictionary<char, string[]>();
         foreach (var (key, value) in ini.Section("accents"))
         {
             if (key.Length != 1) continue;
             var variants = value.Split([' ', ',', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            if (variants.Length > 0) overrides[char.ToLowerInvariant(key[0])] = variants;
+            if (variants.Length > 0) accents[key[0]] = variants;
         }
-        AccentOverrides = overrides;
+        Accents = accents.Count > 0 ? accents : AccentTable.Defaults;
+    }
+
+    public void ResetToDefaults()
+    {
+        File.WriteAllText(Path, BuildDefaultIni());
+        try { Load(); Changed?.Invoke(); } catch { }
     }
 
     public void OpenInEditor()
@@ -66,21 +73,34 @@ internal sealed class Settings : IDisposable
 
     public void Dispose() => _watcher.Dispose();
 
-    private const string DefaultIni = """
-        ; AccentHold configuration. Saved changes apply instantly, no restart needed.
-
-        [general]
-        ; Delay in milliseconds before the accent menu appears while holding a key (50-2000).
-        hold_delay_ms = 180
-
-        ; Menu size multiplier: 1.0 is default, 1.5 is larger, 0.8 is smaller (0.7-2.5).
-        scale = 1.0
-
-        [accents]
-        ; Optional overrides. One base letter per line, variants separated by spaces,
-        ; ordered as they should appear. Uppercase variants are derived automatically.
-        ; Uncomment and edit to customize, or add letters/symbols of your own:
-        ; e = e a c ' i o u
-
-        """;
+    private static string BuildDefaultIni()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("; AccentHold configuration. Saved changes apply instantly, no restart needed.");
+        sb.AppendLine();
+        sb.AppendLine("[general]");
+        sb.AppendLine("; Delay in milliseconds before the accent menu appears while holding a key (50-2000).");
+        sb.AppendLine("hold_delay_ms = 180");
+        sb.AppendLine();
+        sb.AppendLine("; Menu size multiplier: 1.0 is default, 1.5 is larger, 0.8 is smaller (0.7-2.5).");
+        sb.AppendLine("scale = 1.0");
+        sb.AppendLine();
+        sb.AppendLine("[accents]");
+        sb.AppendLine("; The full accent table, entirely yours to edit. One base character per line,");
+        sb.AppendLine("; variants separated by spaces, shown in that order. The letter defaults are");
+        sb.AppendLine("; taken verbatim from macOS press-and-hold (upper and lower case have separate");
+        sb.AppendLine("; lines because macOS orders them differently), followed by iOS-style extra");
+        sb.AppendLine("; sets for digits and punctuation. Add, edit or delete any line freely.");
+        var separatorEmitted = false;
+        foreach (var (key, variants) in AccentTable.Defaults)
+        {
+            if (!separatorEmitted && !char.IsLetter(key))
+            {
+                sb.AppendLine();
+                separatorEmitted = true;
+            }
+            sb.AppendLine($"{key} = {string.Join(' ', variants)}");
+        }
+        return sb.ToString();
+    }
 }

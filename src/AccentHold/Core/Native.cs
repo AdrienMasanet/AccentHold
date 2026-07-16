@@ -12,9 +12,14 @@ internal static class Native
     public const int WM_KEYUP = 0x0101;
     public const int WM_SYSKEYDOWN = 0x0104;
     public const int WM_SYSKEYUP = 0x0105;
+    public const int WM_MOUSEMOVE = 0x0200;
     public const int WM_LBUTTONDOWN = 0x0201;
+    public const int WM_LBUTTONUP = 0x0202;
     public const int WM_RBUTTONDOWN = 0x0204;
     public const int WM_MBUTTONDOWN = 0x0207;
+    public const int WM_MOUSELEAVE = 0x02A3;
+    public const int WM_MOUSEACTIVATE = 0x0021;
+    public const int MA_NOACTIVATE = 3;
     public const uint LLKHF_INJECTED = 0x10;
 
     [StructLayout(LayoutKind.Sequential)]
@@ -71,10 +76,17 @@ internal static class Native
     public const int VK_RCONTROL = 0xA3;
     public const int VK_LMENU = 0xA4;
     public const int VK_RMENU = 0xA5;
+    public const uint MAPVK_VK_TO_VSC = 0;
     public const uint MAPVK_VK_TO_CHAR = 2;
+    // ToUnicodeEx flag (Win10 1607+): resolve without touching the kernel dead-key state.
+    public const uint TOUNICODE_NO_STATE_CHANGE = 0x4;
 
     [DllImport("user32.dll")]
     public static extern uint MapVirtualKeyExW(uint uCode, uint uMapType, nint dwhkl);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern int ToUnicodeEx(uint wVirtKey, uint wScanCode, byte[] lpKeyState,
+        [Out] char[] pwszBuff, int cchBuff, uint wFlags, nint dwhkl);
 
     [DllImport("user32.dll")]
     public static extern nint GetKeyboardLayout(uint idThread);
@@ -167,6 +179,20 @@ internal static class Native
 
     [DllImport("user32.dll")]
     public static extern bool GetWindowRect(nint hWnd, out RECT lpRect);
+
+    public const uint TME_LEAVE = 0x2;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct TRACKMOUSEEVENT
+    {
+        public uint cbSize;
+        public uint dwFlags;
+        public nint hwndTrack;
+        public uint dwHoverTime;
+    }
+
+    [DllImport("user32.dll")]
+    public static extern bool TrackMouseEvent(ref TRACKMOUSEEVENT lpEventTrack);
 
     public const uint OBJID_CARET = 0xFFFFFFF8;
 

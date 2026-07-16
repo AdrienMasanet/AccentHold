@@ -3,6 +3,7 @@ using System.Globalization;
 namespace AccentHold.Core;
 
 // Minimal, dependency-free INI reader: [sections], key = value, ';' or '#' comments.
+// Keys are case-SENSITIVE: the accent table has distinct 'a' and 'A' entries.
 internal sealed class Ini
 {
     private readonly Dictionary<string, Dictionary<string, string>> _sections = new(StringComparer.OrdinalIgnoreCase);
@@ -20,11 +21,12 @@ internal sealed class Ini
                 current = line[1..^1].Trim();
                 continue;
             }
-            var eq = line.IndexOf('=');
+            // Search from index 1 so '=' itself can be used as a key (e.g. "= = ≠ ≈").
+            var eq = line.IndexOf('=', 1);
             if (eq <= 0) continue;
             var key = line[..eq].Trim();
             var value = line[(eq + 1)..].Trim();
-            if (!ini._sections.TryGetValue(current, out var s)) ini._sections[current] = s = new(StringComparer.OrdinalIgnoreCase);
+            if (!ini._sections.TryGetValue(current, out var s)) ini._sections[current] = s = new(StringComparer.Ordinal);
             s[key] = value;
         }
         return ini;

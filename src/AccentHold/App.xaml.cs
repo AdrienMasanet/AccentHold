@@ -60,7 +60,7 @@ public partial class App : Application
             }
             else
             {
-                table.TryGetVariants(letters[i / 2], upper: false, out var variants);
+                table.TryGetVariants(letters[i / 2], out var variants);
                 var x = screen.Width / 2 + (i % 4 == 0 ? -280 : 280);
                 var caret = new Native.RECT { Left = x, Top = screen.Height / 2, Right = x + 2, Bottom = screen.Height / 2 + 24 };
                 PopupFactory().ShowAt(caret, approximate: false, variants, _settings!.Scale, avoid: null, _ => { });

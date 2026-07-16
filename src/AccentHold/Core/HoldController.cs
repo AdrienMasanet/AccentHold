@@ -21,8 +21,9 @@ internal sealed class HoldController : IDisposable
     private AccentTable _table;
     private State _state = State.Idle;
     private int _primeVk;
-    private bool _primeUpper;
     private string[] _variants = [];
+    private readonly byte[] _keyState = new byte[256];
+    private readonly char[] _charBuf = new char[8];
     private int _selection = -1;
     private int _holdToken;
     private readonly HashSet<int> _downKeys = [];
@@ -35,10 +36,10 @@ internal sealed class HoldController : IDisposable
         _dispatcher = dispatcher;
         _popup = popup;
         _settings = settings;
-        _table = new AccentTable(settings.AccentOverrides);
+        _table = new AccentTable(settings.Accents);
         _winEventProc = OnForegroundChanged;
         _holdTimer = new System.Threading.Timer(OnHoldElapsed);
-        settings.Changed += () => { lock (_gate) _table = new AccentTable(_settings.AccentOverrides); };
+        settings.Changed += () => { lock (_gate) _table = new AccentTable(_settings.Accents); };
     }
 
     public void Install()
@@ -74,10 +75,9 @@ internal sealed class HoldController : IDisposable
     // Idle: the first press of an accentable key types normally and arms the hold timer.
     private bool HandleIdle(int vk, bool isDown)
     {
-        if (isDown && TryGetCandidate(vk, out var ch, out var upper) && _table.TryGetVariants(ch, upper, out var variants))
+        if (isDown && TryGetCandidate(vk, out var variants))
         {
             _primeVk = vk;
-            _primeUpper = upper;
             _variants = variants;
             _selection = -1;
             _state = State.Priming;
@@ -248,20 +248,23 @@ internal sealed class HoldController : IDisposable
         }
     }
 
-    private bool TryGetCandidate(int vk, out char ch, out bool upper)
+    // Resolves what character the key would type on the foreground layout (shift and caps
+    // included, so shifted punctuation like '?' works), then looks it up in the table.
+    private bool TryGetCandidate(int vk, out string[] variants)
     {
-        ch = default;
-        upper = false;
+        variants = [];
         if (AnyDown(Native.VK_CONTROL, Native.VK_LCONTROL, Native.VK_RCONTROL,
                     Native.VK_MENU, Native.VK_LMENU, Native.VK_RMENU,
                     Native.VK_LWIN, Native.VK_RWIN)) return false;
-        var mapped = Native.MapVirtualKeyExW((uint)vk, Native.MAPVK_VK_TO_CHAR, Native.GetForegroundKeyboardLayout());
-        // High bit set means dead key; zero means the key produces no character.
-        if (mapped == 0 || (mapped & 0x80000000) != 0) return false;
-        ch = char.ToLowerInvariant((char)mapped);
-        if (!_table.Contains(ch)) return false;
-        upper = AnyDown(Native.VK_SHIFT, Native.VK_LSHIFT, Native.VK_RSHIFT) ^ Native.IsCapsLockOn();
-        return true;
+        var layout = Native.GetForegroundKeyboardLayout();
+        var scan = Native.MapVirtualKeyExW((uint)vk, Native.MAPVK_VK_TO_VSC, layout);
+        Array.Clear(_keyState);
+        if (AnyDown(Native.VK_SHIFT, Native.VK_LSHIFT, Native.VK_RSHIFT)) _keyState[Native.VK_SHIFT] = 0x80;
+        if (Native.IsCapsLockOn()) _keyState[Native.VK_CAPITAL] = 0x01;
+        var n = Native.ToUnicodeEx((uint)vk, scan, _keyState, _charBuf, _charBuf.Length,
+            Native.TOUNICODE_NO_STATE_CHANGE, layout);
+        // Exactly one produced char; dead keys (< 0) and multi-char results are rejected.
+        return n == 1 && _table.TryGetVariants(_charBuf[0], out variants);
     }
 
     private bool AnyDown(params ReadOnlySpan<int> vks)
