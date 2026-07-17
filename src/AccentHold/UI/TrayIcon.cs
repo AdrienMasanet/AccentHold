@@ -23,6 +23,15 @@ internal sealed class TrayIcon : IDisposable
         var settingsItem = new ToolStripMenuItem("Settings…");
         settingsItem.Click += (_, _) => settings.OpenInEditor();
 
+        var resetItem = new ToolStripMenuItem("Reset settings…");
+        resetItem.Click += (_, _) =>
+        {
+            var choice = MessageBox.Show(
+                "Restore the default settings?\n\nYour current config.ini (delay, size, accent table) will be overwritten.",
+                "AccentHold", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+            if (choice == DialogResult.Yes) settings.ResetToDefaults();
+        };
+
         var quitItem = new ToolStripMenuItem("Quit");
         quitItem.Click += (_, _) => quit();
 
@@ -30,6 +39,7 @@ internal sealed class TrayIcon : IDisposable
         menu.Items.Add(enabled);
         menu.Items.Add(startup);
         menu.Items.Add(settingsItem);
+        menu.Items.Add(resetItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(quitItem);
 
