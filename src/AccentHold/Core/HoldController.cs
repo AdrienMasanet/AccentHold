@@ -248,6 +248,9 @@ internal sealed class HoldController : IDisposable
             if (_state == State.Popup) Dismiss();
             else if (_state != State.Idle) CancelHold();
         }
+        // Wake the new app's accessibility tree early (Chromium builds it lazily),
+        // so the caret is findable by the time the user holds a key.
+        Task.Run(CaretLocator.WarmUp);
     }
 
     // Resolves what character the key would type on the foreground layout (shift and caps
