@@ -236,7 +236,6 @@ public partial class AccentPopup : Window
         b.Freeze();
         return b;
     }
-
 }
 
 // Row item: one accent variant with its numeric shortcut.
