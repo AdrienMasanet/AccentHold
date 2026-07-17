@@ -34,7 +34,7 @@
         <Border.Effect>
             <DropShadowEffect BlurRadius="16" ShadowDepth="3" Direction="270" Opacity="0.35" Color="Black" />
         </Border.Effect>
-        <ItemsControl x:Name="Items" Margin="5,4" IsTabStop="False">
+        <ItemsControl x:Name="Items" Margin="4,3" IsTabStop="False">
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
                     <StackPanel Orientation="Horizontal" />
@@ -42,13 +42,13 @@
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                    <Border x:Name="Pill" CornerRadius="6" Padding="10,3,10,4" Margin="1,0"
+                    <Border x:Name="Pill" CornerRadius="6" Padding="9,2,9,3" Margin="1,0"
                             Background="Transparent">
                         <StackPanel>
-                            <TextBlock x:Name="Glyph" Text="{Binding Char}" FontSize="21"
+                            <TextBlock x:Name="Glyph" Text="{Binding Char}" FontSize="15"
                                        HorizontalAlignment="Center"
                                        Foreground="{DynamicResource ForegroundBrush}" />
-                            <TextBlock x:Name="Hint" Text="{Binding Digit}" FontSize="10.5" Margin="0,1,0,0"
+                            <TextBlock x:Name="Hint" Text="{Binding Digit}" FontSize="9" Margin="0,1,0,0"
                                        HorizontalAlignment="Center"
                                        Foreground="{DynamicResource SubtleBrush}" />
                         </StackPanel>
