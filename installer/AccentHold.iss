@@ -50,6 +50,12 @@ Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
 Name: "startup"; Description: "Start {#AppName} automatically when I sign in"
 Name: "startup\admin"; Description: "Run with administrator privileges (recommended, so accents also work in apps running as admin)"
 
+[Registry]
+; Non-elevated startup goes through the Run key so it appears in Task Manager's Startup apps;
+; the elevated variant needs a scheduled task instead (created in code below).
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#AppName}"; \
+    ValueData: """{app}\{#AppExe}"""; Tasks: startup and not startup\admin; Flags: uninsdeletevalue
+
 [Code]
 const
   TaskName = 'AccentHold';
@@ -79,14 +85,14 @@ begin
   RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', '{#AppName}');
 end;
 
-// Registers a logon task (interactive token, no stored password) that starts the app,
-// elevated when the "admin" task is checked. Then launches it for the current session.
-procedure CreateLogonTask(Highest: Boolean);
+// Registers an elevated logon task (interactive token, no stored password) that starts
+// the app at sign-in; used only for the admin option, then runs it for this session.
+procedure CreateElevatedLogonTask;
 var
   User, RunLevel, Xml, Path: string;
 begin
   User := GetEnv('USERDOMAIN') + '\' + GetEnv('USERNAME');
-  if Highest then RunLevel := 'HighestAvailable' else RunLevel := 'LeastPrivilege';
+  RunLevel := 'HighestAvailable';
 
   Xml :=
     '<?xml version="1.0" encoding="UTF-16"?>' + #13#10 +
@@ -116,14 +122,19 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssInstall then
-    KillRunning
+  begin
+    KillRunning;
+    // Clear autostart from previous installs; the [Registry] entry re-creates the
+    // Run key afterwards when the non-elevated startup option is selected.
+    RemoveAutostart;
+  end
   else if CurStep = ssPostInstall then
   begin
-    RemoveAutostart;
-    if WizardIsTaskSelected('startup') then
-      CreateLogonTask(WizardIsTaskSelected('startup\admin'))
+    if WizardIsTaskSelected('startup\admin') then
+      CreateElevatedLogonTask
     else
-      Exec(ExpandConstant('{app}\{#AppExe}'), '', '', SW_SHOW, ewNoWait, ErrorCode);
+      // Launch non-elevated for this session (the installer itself runs elevated).
+      ExecAsOriginalUser(ExpandConstant('{app}\{#AppExe}'), '', '', SW_SHOW, ewNoWait, ErrorCode);
   end;
 end;
 
