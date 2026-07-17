@@ -43,9 +43,7 @@
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
                     <Border x:Name="Pill" CornerRadius="6" Padding="10,3,10,4" Margin="1,0"
-                            Background="Transparent"
-                            MouseEnter="OnOptionEnter" MouseLeave="OnOptionLeave"
-                            MouseLeftButtonUp="OnOptionClick">
+                            Background="Transparent">
                         <StackPanel>
                             <TextBlock x:Name="Glyph" Text="{Binding Char}" FontSize="21"
                                        HorizontalAlignment="Center"

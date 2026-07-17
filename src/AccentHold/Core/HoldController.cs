@@ -241,6 +241,8 @@ internal sealed class HoldController : IDisposable
 
     private void OnForegroundChanged(nint hook, uint evt, nint hwnd, int idObject, int idChild, uint tid, uint time)
     {
+        // Never self-dismiss if the popup itself is what came to the foreground.
+        if (hwnd == AccentPopup.InstanceHwnd) return;
         lock (_gate)
         {
             if (_state == State.Popup) Dismiss();

@@ -24,6 +24,7 @@ public partial class AccentPopup : Window
     private readonly ObservableCollection<OptionVm> _options = [];
     private Action<int>? _onClick;
     private nint _hwnd;
+    private bool _leaveTracked;
 
     public AccentPopup()
     {
@@ -43,6 +44,76 @@ public partial class AccentPopup : Window
         var ex = Native.GetWindowLongPtrW(_hwnd, Native.GWL_EXSTYLE);
         Native.SetWindowLongPtrW(_hwnd, Native.GWL_EXSTYLE,
             ex | Native.WS_EX_NOACTIVATE | Native.WS_EX_TOOLWINDOW | Native.WS_EX_TRANSPARENT);
+
+        // Mouse input is handled from raw window messages: WPF's routed mouse events
+        // are unreliable on a never-activated layered window (the first click is lost).
+        HwndSource.FromHwnd(_hwnd)?.AddHook(WndProc);
+    }
+
+    private nint WndProc(nint hwnd, int msg, nint wParam, nint lParam, ref bool handled)
+    {
+        switch (msg)
+        {
+            // WPF activates the window on its very first click despite WS_EX_NOACTIVATE,
+            // which stole the target app's focus; refuse activation at the source.
+            case Native.WM_MOUSEACTIVATE:
+                handled = true;
+                return Native.MA_NOACTIVATE;
+            case Native.WM_MOUSEMOVE:
+                TrackLeave();
+                SetHover(ItemIndexAt(lParam));
+                break;
+            case Native.WM_MOUSELEAVE:
+                _leaveTracked = false;
+                SetHover(null);
+                break;
+            case Native.WM_LBUTTONUP:
+                if (ItemIndexAt(lParam) is { } index)
+                {
+                    handled = true;
+                    _onClick?.Invoke(index);
+                }
+                break;
+        }
+        return 0;
+    }
+
+    // Maps client-pixel coordinates from a mouse message to the option under them.
+    private int? ItemIndexAt(nint lParam)
+    {
+        var x = (short)((long)lParam & 0xFFFF);
+        var y = (short)(((long)lParam >> 16) & 0xFFFF);
+        if (PresentationSource.FromVisual(this)?.CompositionTarget is not { } target) return null;
+        var pt = target.TransformFromDevice.Transform(new Point(x, y));
+        int? found = null;
+        VisualTreeHelper.HitTest(this, null, result =>
+        {
+            if ((result.VisualHit as FrameworkElement)?.DataContext is OptionVm vm)
+            {
+                found = vm.Index;
+                return HitTestResultBehavior.Stop;
+            }
+            return HitTestResultBehavior.Continue;
+        }, new PointHitTestParameters(pt));
+        return found;
+    }
+
+    private void SetHover(int? index)
+    {
+        for (var i = 0; i < _options.Count; i++) _options[i].IsHovered = i == index;
+    }
+
+    private void TrackLeave()
+    {
+        if (_leaveTracked) return;
+        _leaveTracked = true;
+        var tme = new Native.TRACKMOUSEEVENT
+        {
+            cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<Native.TRACKMOUSEEVENT>(),
+            dwFlags = Native.TME_LEAVE,
+            hwndTrack = _hwnd,
+        };
+        Native.TrackMouseEvent(ref tme);
     }
 
     internal void ShowAt(Native.RECT caretPx, bool approximate, IReadOnlyList<string> variants, double scale,
@@ -77,6 +148,7 @@ public partial class AccentPopup : Window
         BeginAnimation(OpacityProperty, null);
         Opacity = 0;
         SetClickThrough(true);
+        SetHover(null);
     }
 
     private void SetClickThrough(bool enabled)
@@ -165,14 +237,6 @@ public partial class AccentPopup : Window
         return b;
     }
 
-    private void OnOptionEnter(object sender, System.Windows.Input.MouseEventArgs e) { if (VmOf(sender) is { } vm) vm.IsHovered = true; }
-
-    private void OnOptionLeave(object sender, System.Windows.Input.MouseEventArgs e) { if (VmOf(sender) is { } vm) vm.IsHovered = false; }
-
-    private void OnOptionClick(object sender, System.Windows.Input.MouseButtonEventArgs e) { if (VmOf(sender) is { } vm) _onClick?.Invoke(vm.Index); }
-
-    // DataContext can momentarily be the disconnected-item placeholder while the list refreshes.
-    private static OptionVm? VmOf(object sender) => (sender as FrameworkElement)?.DataContext as OptionVm;
 }
 
 // Row item: one accent variant with its numeric shortcut.
