@@ -43,27 +43,41 @@ internal static class CaretLocator
         if (Native.GetForegroundWindow() == 0) return false;
 
         // Fast path: a classic Win32 caret owned by the foreground thread.
-        if (TryThreadCaret(0, ref rectPx)) return true;
+        if (TryThreadCaret(0, ref rectPx, out var focusHwnd, depth: 0)) return true;
         // UIA pass; touching the focused element also wakes Chromium's lazy accessibility.
         if (TryUiAutomation(ref rectPx, ref approximate)) return true;
+        // WinUI-hosted web views (WhatsApp and friends) expose their text world under the
+        // focused Win32 window, disconnected from the UIA focus chain.
+        if (TryFocusWindowText(focusHwnd, ref rectPx)) return true;
         // Chromium (browsers, WebView2 apps, Electron) builds its accessibility tree
         // asynchronously after first contact; give it one beat and try again.
         Thread.Sleep(90);
-        return TryUiAutomation(ref rectPx, ref approximate);
+        if (TryUiAutomation(ref rectPx, ref approximate)) return true;
+        return TryFocusWindowText(focusHwnd, ref rectPx);
     }
 
     // Pre-touches UIA for the foreground app so Chromium-based apps have their
     // accessibility tree ready by the time the user holds a key.
     public static void WarmUp()
     {
-        try { _ = AutomationElement.FocusedElement; } catch { }
+        try
+        {
+            _ = AutomationElement.FocusedElement;
+            var gui = new Native.GUITHREADINFO { cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<Native.GUITHREADINFO>() };
+            if (Native.GetGUIThreadInfo(0, ref gui) && gui.hwndFocus != 0)
+                _ = AutomationElement.FromHandle(gui.hwndFocus).Current.ControlType;
+        }
+        catch { }
     }
 
-    // Win32 caret and MSAA caret for one thread (0 = foreground thread).
-    private static bool TryThreadCaret(uint tid, ref Native.RECT rectPx)
+    // Win32 caret and MSAA caret for one thread (0 = foreground thread); follows the
+    // focus window onto another thread once (WebView2 renderers live out of process).
+    private static bool TryThreadCaret(uint tid, ref Native.RECT rectPx, out nint focusHwnd, int depth)
     {
+        focusHwnd = 0;
         var gui = new Native.GUITHREADINFO { cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<Native.GUITHREADINFO>() };
         if (!Native.GetGUIThreadInfo(tid, ref gui)) return false;
+        focusHwnd = gui.hwndFocus;
         if (gui.hwndCaret != 0)
         {
             var rc = gui.rcCaret;
@@ -74,7 +88,35 @@ internal static class CaretLocator
                 return true;
             }
         }
+        if (gui.hwndFocus != 0 && depth < 2)
+        {
+            var focusTid = Native.GetWindowThreadProcessId(gui.hwndFocus, 0);
+            if (focusTid != 0 && focusTid != tid && TryThreadCaret(focusTid, ref rectPx, out _, depth + 1))
+                return true;
+        }
         return TryMsaaCaret(gui.hwndFocus != 0 ? gui.hwndFocus : Native.GetForegroundWindow(), ref rectPx);
+    }
+
+    // A WinUI input-site or WebView2 window hides the web content's accessibility under
+    // its own HWND: ask the first document/edit there where its caret selection is.
+    private static bool TryFocusWindowText(nint hwnd, ref Native.RECT rectPx)
+    {
+        try
+        {
+            if (hwnd == 0) return false;
+            var root = AutomationElement.FromHandle(hwnd);
+            var editor = root.FindFirst(TreeScope.Subtree, new OrCondition(
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Document),
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit)));
+            if (editor is null) return false;
+            if (editor.TryGetCurrentPattern(TextPattern.Pattern, out var pattern) && pattern is TextPattern tp)
+            {
+                var sel = tp.GetSelection();
+                if (sel is { Length: > 0 } && TryRangeRect(sel[^1], ref rectPx)) return true;
+            }
+            return false;
+        }
+        catch { return false; }
     }
 
     private static bool TryMsaaCaret(nint hwnd, ref Native.RECT rectPx)
@@ -125,7 +167,7 @@ internal static class CaretLocator
             if (hwnd != 0)
             {
                 var tid = Native.GetWindowThreadProcessId(hwnd, 0);
-                if (tid != 0 && TryThreadCaret(tid, ref rectPx)) return true;
+                if (tid != 0 && TryThreadCaret(tid, ref rectPx, out _, depth: 1)) return true;
                 if (TryMsaaCaret(hwnd, ref rectPx)) return true;
             }
 

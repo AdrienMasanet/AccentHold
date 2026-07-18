@@ -5,7 +5,7 @@
 ; Build with scripts\build-installer.ps1, which passes AppVersion and PublishDir.
 
 #ifndef AppVersion
-  #define AppVersion "1.0.0"
+  #define AppVersion "1.0.1"
 #endif
 #ifndef PublishDir
   #define PublishDir "..\out\publish"
